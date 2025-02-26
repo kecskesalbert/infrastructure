@@ -1,0 +1,5 @@
+*.html
+*.png
+*.bak
+.terraform*
+terraform.tfstate*
