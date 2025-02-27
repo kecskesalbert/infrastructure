@@ -90,6 +90,6 @@ resource "oci_core_subnet" "test_subnet" {
   dhcp_options_id   = oci_core_virtual_network.test_vcn.default_dhcp_options_id
 }
 
-output "subnet-id" {
-	value = oci_core_subnet.test_subnet.id
-}
+#output "subnet-id" {
+#	value = oci_core_subnet.test_subnet.id
+#}

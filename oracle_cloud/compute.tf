@@ -2,10 +2,6 @@
 variable "compute" {
 }
 
-variable "ssh_public_key" {
-  default = ""
-}
-
 # Availability domain
 # Only certain availability domains are eligible for free tier 
 data "oci_identity_availability_domain" "ad" {
@@ -28,8 +24,16 @@ data "oci_core_images" "all_images" {
 	sort_order               = "DESC"
 }
 
-#output "inst_image" {
-#	value = data.oci_core_images.all_images.images[0].id
+#output "all_images" {
+#	value = data.oci_core_images.all_images.images
+#}
+
+locals {
+	os_image_id = coalescelist(data.oci_core_images.all_images.images, [{id="dummy"}])[0].id
+}
+
+#output "os_image_id" {
+#	value = local.os_image_id
 #}
 
 # Shapes
@@ -37,69 +41,105 @@ data "oci_core_images" "all_images" {
 data "oci_core_shapes" "all_shapes" {
     compartment_id = var.compute.compartment_ocid
     availability_domain = data.oci_identity_availability_domain.ad.name
-    image_id = data.oci_core_images.all_images.images[0].id
+    image_id = local.os_image_id
 }
 
-#output "inst_shape" {
+#output "inst_shapes" {
 #	value = data.oci_core_shapes.all_shapes.shapes
 #}
 
-# TODO: get subnet id by name
-#data "oci_core_subnet" "all_subnets" {
-#  subnet_id = "123"
+# Find subnet by name. Subnet names are not unique.
+data "oci_core_subnets" "all_subnets" {
+	compartment_id = var.compute.compartment_ocid
+	display_name = var.compute.subnet_name
+}
+
+#output "inst_subnets" {
+#	value = data.oci_core_subnets.all_subnets.subnets
 #}
+
 
 # create a new TLS key
 resource "tls_private_key" "compute_ssh_key" {
-  algorithm = "RSA"
-  rsa_bits  = 2048
+	algorithm = "RSA"
+	rsa_bits  = 2048
 }
 
-# Display key content with: terraform output --raw ssh_private_key
-# Create public key from private key: ssh-keygen -f private_key.pem -y
+# var.compute.have_ssh_key: optional, filename containing a SSH public key in OpenSSH PEM (RFC 4716) format
+# If not defined, a random key will be generated
+locals {
+	ssh_public_key = (try(var.compute.have_ssh_key, "") != "") ? file(var.compute.have_ssh_key) : tls_private_key.compute_ssh_key.public_key_openssh
+}
+
+# Display sensitive content with: terraform output --raw ssh_private_key
 output "ssh_private_key" {
-  value     = (var.ssh_public_key != "") ? var.ssh_public_key : tls_private_key.compute_ssh_key.private_key_pem
-  sensitive = true
+	value     = (try(var.compute.have_ssh_key, "") == "") ? tls_private_key.compute_ssh_key.private_key_pem : "(external)"
+	sensitive = true
+}
+
+output "ssh_public_key" {
+	value     = local.ssh_public_key
 }
 
 resource "oci_core_instance" "compute_instance" {
-  availability_domain = data.oci_identity_availability_domain.ad.name
-  compartment_id      = var.compute.compartment_ocid
-  display_name        = var.compute.hostname
-  shape               = var.compute.shape
-  shape_config {
-    ocpus = var.compute.cpu_count
-    memory_in_gbs = var.compute.memory_gb
-  }
 
-  create_vnic_details {
-    subnet_id        = oci_core_subnet.test_subnet.id
-    display_name     = "primaryvnic"
-    assign_public_ip = true
-    hostname_label   = var.compute.hostname
-  }
+	# Validate the supplied parameters to avoid the unspecific "create failed" error
+	lifecycle {
+		precondition {
+			condition     = local.os_image_id != "dummy"
+			error_message = "Error: OS image not found for: ${var.compute.os_name}, ${var.compute.os_version}, ${var.compute.shape}"
+		}
+		precondition {
+			condition     = contains(coalescelist(data.oci_core_shapes.all_shapes.shapes, [{name="dummy"}]).*.name, var.compute.shape)
+			error_message = "Error: Shape not found: ${var.compute.shape}"
+		}
+		precondition {
+			condition     = length(data.oci_core_subnets.all_subnets.subnets) > 0
+			error_message = "Error: Subnet not found: ${var.compute.subnet_name}"
+		}
+		precondition {
+			condition     = length(data.oci_core_subnets.all_subnets.subnets) == 0 || length(data.oci_core_subnets.all_subnets.subnets) == 1
+			error_message = "Error: Subnet name is ambiguous: ${var.compute.subnet_name}"
+		}
+	}
 
-  source_details {
-    source_type = "image"
-#    source_id   = lookup(data.oci_core_images.all_images.images[0], "id")
-	source_id = data.oci_core_images.all_images.images[0].id
-  }
+	availability_domain = data.oci_identity_availability_domain.ad.name
+	compartment_id      = var.compute.compartment_ocid
+	display_name        = var.compute.hostname
+	shape               = var.compute.shape
+	shape_config {
+		ocpus 			= var.compute.cpu_count
+		memory_in_gbs 	= var.compute.memory_gb
+	}
 
-  metadata = {
-    ssh_authorized_keys = (var.ssh_public_key != "") ? var.ssh_public_key : tls_private_key.compute_ssh_key.public_key_openssh
-  }
+	create_vnic_details {
+		subnet_id        = data.oci_core_subnets.all_subnets.subnets[0].id
+		display_name     = "primaryvnic"
+		assign_public_ip = true
+		hostname_label   = var.compute.hostname
+	}
+
+	source_details {
+		source_type = "image"
+		source_id = local.os_image_id
+	}
+
+	metadata = {
+		ssh_authorized_keys = local.ssh_public_key
+	}
 }
 
 data "oci_core_vnic_attachments" "app_vnics" {
-  compartment_id      = var.compute.compartment_ocid
-  availability_domain = data.oci_identity_availability_domain.ad.name
-  instance_id         = oci_core_instance.compute_instance.id
+	compartment_id      = var.compute.compartment_ocid
+	availability_domain = data.oci_identity_availability_domain.ad.name
+	instance_id         = oci_core_instance.compute_instance.id
 }
 
 data "oci_core_vnic" "app_vnic" {
-  vnic_id = data.oci_core_vnic_attachments.app_vnics.vnic_attachments[0]["vnic_id"]
+	vnic_id = data.oci_core_vnic_attachments.app_vnics.vnic_attachments[0]["vnic_id"]
 }
 
 output "public_ip" {
-  value = data.oci_core_vnic.app_vnic.public_ip_address
+	value = data.oci_core_vnic.app_vnic.public_ip_address
 }
+
