@@ -2,8 +2,6 @@
 variable "compute" {
 }
 
-# Availability domain
-# Only certain availability domains are eligible for free tier 
 data "oci_identity_availability_domain" "ad" {
 	compartment_id = var.tenancy_ocid
 	ad_number      = var.compute.ad_number
@@ -13,8 +11,6 @@ data "oci_identity_availability_domain" "ad" {
 #	value = data.oci_identity_availability_domain.ad
 #}
 
-# OS images: https://docs.oracle.com/iaas/images/
-# Only compatible images are returned
 data "oci_core_images" "all_images" {
 	compartment_id           = var.compute.compartment_ocid
 	operating_system         = var.compute.os_name
@@ -58,20 +54,16 @@ data "oci_core_subnets" "all_subnets" {
 #	value = data.oci_core_subnets.all_subnets.subnets
 #}
 
-
 # create a new TLS key
 resource "tls_private_key" "compute_ssh_key" {
 	algorithm = "RSA"
 	rsa_bits  = 2048
 }
 
-# var.compute.have_ssh_key: optional, filename containing a SSH public key in OpenSSH PEM (RFC 4716) format
-# If not defined, a random key will be generated
 locals {
 	ssh_public_key = (try(var.compute.have_ssh_key, "") != "") ? file(var.compute.have_ssh_key) : tls_private_key.compute_ssh_key.public_key_openssh
 }
 
-# Display sensitive content with: terraform output --raw ssh_private_key
 output "ssh_private_key" {
 	value     = (try(var.compute.have_ssh_key, "") == "") ? tls_private_key.compute_ssh_key.private_key_pem : "(external)"
 	sensitive = true
