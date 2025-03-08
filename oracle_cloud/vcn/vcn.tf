@@ -1,6 +1,6 @@
 resource "oci_core_vcn" "vcn" {
-	display_name   = var.vcn_name
-	dns_label      = var.vcn_name
+	display_name   = var.vcn_values.name
+	dns_label      = var.vcn_values.name
 	compartment_id = var.vcn_values.compartment_ocid
 	cidr_block     = var.vcn_values.cidr
 }
@@ -121,15 +121,19 @@ resource "oci_core_subnet" "subnets" {
 	cidr_block        = each.value.cidr_block
 	display_name      = each.key
 	dns_label         = each.key
-	security_list_ids = [
-		for name in each.value.security_lists : oci_core_security_list.security_lists[name].id
-	]
-	route_table_id    = try(
-		oci_core_route_table.route_table[each.value.route_table].id,
-		oci_core_vcn.vcn.default_route_table_id
-	)
-	dhcp_options_id   = try(
-		oci_core_dhcp_options.dhcp_options[each.value.dhcp_options].id,
-		oci_core_vcn.vcn.default_dhcp_options_id
-	)
+	security_list_ids = contains(keys(each.value), "security_lists") ? [
+		for name in each.value.security_lists : (
+			name == "default" ?
+				oci_core_vcn.vcn.default_security_list_id :
+				oci_core_security_list.security_lists[name].id
+			)
+	] : [ oci_core_vcn.vcn.default_security_list_id ]
+    route_table_id    = try(
+            oci_core_route_table.route_table[each.value.route_table].id,
+            oci_core_vcn.vcn.default_route_table_id
+    )
+    dhcp_options_id   = try(
+            oci_core_dhcp_options.dhcp_options[each.value.dhcp_options].id,
+            oci_core_vcn.vcn.default_dhcp_options_id
+    )
 }

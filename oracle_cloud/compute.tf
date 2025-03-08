@@ -1,3 +1,8 @@
+# TODO: Move to a module
+# TODO: VNIC NSGs
+# TODO: Allow referencing non TF-managed resources
+# TODO: Run post-create actions
+
 # Value populated from *.tfvars.json
 variable "compute" {
 }
@@ -45,13 +50,13 @@ data "oci_core_shapes" "all_shapes" {
 #}
 
 # Find subnet by name. Subnet names are not unique.
-data "oci_core_subnets" "all_subnets" {
+data "oci_core_subnets" "matching_subnets" {
 	compartment_id = var.compute.compartment_ocid
 	display_name = var.compute.subnet_name
 }
 
 #output "inst_subnets" {
-#	value = data.oci_core_subnets.all_subnets.subnets
+#	value = data.oci_core_subnets.matching_subnets.subnets
 #}
 
 # create a new TLS key
@@ -73,7 +78,6 @@ output "ssh_public_key" {
 	value     = local.ssh_public_key
 }
 
-/*
 resource "oci_core_instance" "compute_instance" {
 
 	# Validate the supplied parameters to avoid the unspecific "create failed" error
@@ -86,13 +90,8 @@ resource "oci_core_instance" "compute_instance" {
 			condition     = contains(coalescelist(data.oci_core_shapes.all_shapes.shapes, [{name="dummy"}]).*.name, var.compute.shape)
 			error_message = "Error: Shape not found: ${var.compute.shape}"
 		}
-		# This incorrectly blocks unless the network pre-exists
-#		precondition {
-#			condition     = length(data.oci_core_subnets.all_subnets.subnets) > 0
-#			error_message = "Error: Subnet not found: ${var.compute.subnet_name}"
-#		}
-		precondition {
-			condition     = length(data.oci_core_subnets.all_subnets.subnets) == 0 || length(data.oci_core_subnets.all_subnets.subnets) == 1
+		postcondition {
+			condition     = length(data.oci_core_subnets.matching_subnets.subnets) == 1
 			error_message = "Error: Subnet name is ambiguous: ${var.compute.subnet_name}"
 		}
 	}
@@ -107,7 +106,7 @@ resource "oci_core_instance" "compute_instance" {
 	}
 
 	create_vnic_details {
-		subnet_id        = oci_core_subnet.subnets[var.compute.subnet_name].id
+		subnet_id        = data.oci_core_subnets.matching_subnets.subnets[0].id
 		display_name     = "primaryvnic"
 		assign_public_ip = true
 		hostname_label   = var.compute.hostname
@@ -134,6 +133,5 @@ data "oci_core_vnic" "app_vnic" {
 }
 
 output "public_ip" {
-	value = data.oci_core_vnic.app_vnic.public_ip_address
+value = data.oci_core_vnic.app_vnic.public_ip_address
 }
-*/

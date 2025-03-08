@@ -48,7 +48,7 @@ Set up environment variables for:
 	    compartment_ocid:	Compartment OCID
 	    cidr:				VCN CIDR
 	    security_lists:     Object containing the security lists
-	        compartment_ocid:  Optional, defaults to vcn_values.compartment_ocid if not defined
+	        compartment_ocid:  Optional, defaults to vcn_values.compartment_ocid
 	        ingress_security_rules:	Array of inbound rules
     			source:     Source subnet CIDR
 	    		tcp_port:   Optional, TCP port number or -1 for any TCP port
@@ -56,16 +56,17 @@ Set up environment variables for:
 		    	*Note: Either tcp_port or udp_port must be defined.*
 	        egress_security_rules: Array of outbound rules
 			    destination: Destination subnet CIDR
+				destination_type: Optional, CIDR_BLOCK if not defined
 	    		tcp_port:   Optional, TCP port number or -1 for any TCP port
 		    	udp_port:   Optional, UDP port number or -1 for any UDP port
 		    	*Note: Either tcp_port or udp_port must be defined.*
         internet_gateways:  Object containing Internet Gateway definitions
 			Key value will be used for the OCI object display name
-	        compartment_ocid:  Optional, defaults to vcn_values.compartment_ocid if not defined
+	        compartment_ocid:  Optional, defaults to vcn_values.compartment_ocid
             enabled:    Optional, Gateway can be enabled/disabled
         route_tables:	Object containing routing table definitions
 			Key value will be used for the OCI object display name
-			compartment_ocid:  Optional, defaults to vcn_values.compartment_ocid if not defined
+			compartment_ocid:  Optional, defaults to vcn_values.compartment_ocid
 	        rules: Array with the routing table rows
 		        destination: Destination subnet CIDR
 		        network_entity: Array of [ gateway_type, gateway_name ]
@@ -85,5 +86,18 @@ Set up environment variables for:
 				custom_dns_servers:	Optional
 				search_domain_names:	Optional
 				server_type:	Optional
+		subnets
+			Key value will be used for the subnet display name and DNS label
+	        compartment_ocid:  Optional, defaults to vcn_values.compartment_ocid
+			cidr_block:		Subnet CIDR block
+			security_lists:	Optional, array of security list names
+			route_table:	Optional
+	]
+	route_table_id    = oci_core_route_table.route_table[each.value.route_table].id
+	)
+	dhcp_options_id   = try(
+		oci_core_dhcp_options.dhcp_options[each.value.dhcp_options].id,
+		oci_core_vcn.vcn.default_dhcp_options_id
+	)
 
 ###	Output variables:
