@@ -49,16 +49,6 @@ data "oci_core_shapes" "all_shapes" {
 #	value = data.oci_core_shapes.all_shapes.shapes
 #}
 
-# Find subnet by name. Subnet names are not unique.
-data "oci_core_subnets" "matching_subnets" {
-	compartment_id = var.compute.compartment_ocid
-	display_name = var.compute.subnet_name
-}
-
-#output "inst_subnets" {
-#	value = data.oci_core_subnets.matching_subnets.subnets
-#}
-
 # create a new TLS key
 resource "tls_private_key" "compute_ssh_key" {
 	algorithm = "RSA"
@@ -66,7 +56,14 @@ resource "tls_private_key" "compute_ssh_key" {
 }
 
 locals {
-	ssh_public_key = (try(var.compute.have_ssh_key, "") != "") ? file(var.compute.have_ssh_key) : tls_private_key.compute_ssh_key.public_key_openssh
+	ssh_public_key = ( (try(var.compute.have_ssh_key, "") != "") ?
+		file(var.compute.have_ssh_key) :
+		tls_private_key.compute_ssh_key.public_key_openssh
+	)
+	matching_subnets = [
+		for s in module.entcorp_vcn.subnets :
+			s if s.display_name == var.compute.subnet_name
+	]
 }
 
 output "ssh_private_key" {
@@ -90,8 +87,8 @@ resource "oci_core_instance" "compute_instance" {
 			condition     = contains(coalescelist(data.oci_core_shapes.all_shapes.shapes, [{name="dummy"}]).*.name, var.compute.shape)
 			error_message = "Error: Shape not found: ${var.compute.shape}"
 		}
-		postcondition {
-			condition     = length(data.oci_core_subnets.matching_subnets.subnets) == 1
+		precondition {
+			condition     = length(local.matching_subnets) == 1
 			error_message = "Error: Subnet name is ambiguous: ${var.compute.subnet_name}"
 		}
 	}
@@ -106,7 +103,7 @@ resource "oci_core_instance" "compute_instance" {
 	}
 
 	create_vnic_details {
-		subnet_id        = data.oci_core_subnets.matching_subnets.subnets[0].id
+		subnet_id 		 = local.matching_subnets[0].id
 		display_name     = "primaryvnic"
 		assign_public_ip = true
 		hostname_label   = var.compute.hostname
@@ -133,5 +130,5 @@ data "oci_core_vnic" "app_vnic" {
 }
 
 output "public_ip" {
-value = data.oci_core_vnic.app_vnic.public_ip_address
+	value = data.oci_core_vnic.app_vnic.public_ip_address
 }

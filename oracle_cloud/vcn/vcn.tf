@@ -1,22 +1,22 @@
 resource "oci_core_vcn" "vcn" {
-	display_name   = var.vcn_values.name
-	dns_label      = var.vcn_values.name
-	compartment_id = var.vcn_values.compartment_ocid
-	cidr_block     = var.vcn_values.cidr
+	display_name   = var.vcn_name
+	dns_label      = try(var.vcn_dns_name, var.vcn_name)
+	compartment_id = var.vcn_compartment_ocid
+	cidr_block     = var.vcn_cidr
 }
 
 resource "oci_core_internet_gateway" "internet_gateway" {
-	for_each = var.vcn_values.internet_gateways
+	for_each = var.vcn_internet_gateways
 	vcn_id         	= oci_core_vcn.vcn.id
-	compartment_id 	= try(each.value.compartment_ocid, var.vcn_values.compartment_ocid)
+	compartment_id 	= try(each.value.compartment_ocid, var.vcn_compartment_ocid)
 	display_name   	= each.key
 	enabled			= try(each.value.enabled, true)
 }
 
 resource "oci_core_route_table" "route_table" {
-	for_each = var.vcn_values.route_tables
+	for_each = var.vcn_route_tables
 	vcn_id         = oci_core_vcn.vcn.id
-	compartment_id = try(each.value.compartment_ocid, var.vcn_values.compartment_ocid)
+	compartment_id = try(each.value.compartment_ocid, var.vcn_compartment_ocid)
 	display_name   = each.key
 
 	dynamic "route_rules" {
@@ -31,9 +31,9 @@ resource "oci_core_route_table" "route_table" {
 }
 
 resource "oci_core_dhcp_options" "dhcp_options" {
-	for_each = var.vcn_values.dhcp_options
+	for_each = var.vcn_dhcp_options
 	vcn_id         = oci_core_vcn.vcn.id
-	compartment_id = try(each.value.compartment_ocid, var.vcn_values.compartment_ocid)
+	compartment_id = try(each.value.compartment_ocid, var.vcn_compartment_ocid)
 	display_name   = each.key
 	dynamic "options" {
 		for_each = each.value.options
@@ -47,18 +47,18 @@ resource "oci_core_dhcp_options" "dhcp_options" {
 }
 
 resource "oci_core_security_list" "security_lists" {
-	for_each = var.vcn_values.security_lists
+	for_each = var.vcn_security_lists
 	vcn_id         = oci_core_vcn.vcn.id
-	compartment_id = try(each.value.compartment_ocid, var.vcn_values.compartment_ocid)
+	compartment_id = try(each.value.compartment_ocid, var.vcn_compartment_ocid)
 	display_name   = each.key
 
 	dynamic "egress_security_rules" {
-		for_each = try(each.value.egress_security_rules, {})
+		for_each = each.value.egress_security_rules == null ? [] : each.value.egress_security_rules
 		content {
 			destination	= egress_security_rules.value.destination
 			protocol = contains(keys(egress_security_rules.value), "tcp_port") ? 6 : (
 				contains(keys(egress_security_rules.value), "udp_port") ? 17 : (
-				contains(keys(egress_security_rules.value), "icmp") ? 1 : -1 )
+				contains(keys(egress_security_rules.value), "icmp") ? 1 : "all" )
 			)
 			stateless = try(egress_security_rules.stateless, null)
 			dynamic "tcp_options" {
@@ -83,12 +83,12 @@ resource "oci_core_security_list" "security_lists" {
 	}
 
 	dynamic "ingress_security_rules" {
-		for_each = try(each.value.ingress_security_rules, {})
+		for_each = each.value.ingress_security_rules == null ? [] : each.value.ingress_security_rules
 		content {
 			source	= ingress_security_rules.value.source
 			protocol = contains(keys(ingress_security_rules.value), "tcp_port") ? 6 : (
 				contains(keys(ingress_security_rules.value), "udp_port") ? 17 : (
-				contains(keys(ingress_security_rules.value), "icmp") ? 1 : -1 )
+				contains(keys(ingress_security_rules.value), "icmp") ? 1 : "all" )
 			)
 
 			dynamic "tcp_options" {
@@ -115,12 +115,12 @@ resource "oci_core_security_list" "security_lists" {
 }
 
 resource "oci_core_subnet" "subnets" {
-	for_each = var.vcn_values.subnets
-	vcn_id            = oci_core_vcn.vcn.id
-	compartment_id = try(each.value.compartment_ocid, var.vcn_values.compartment_ocid)
-	cidr_block        = each.value.cidr_block
-	display_name      = each.key
-	dns_label         = each.key
+	for_each = var.vcn_subnets
+	vcn_id          = oci_core_vcn.vcn.id
+	compartment_id 	= try(each.value.compartment_ocid, var.vcn_compartment_ocid)
+	cidr_block      = each.value.cidr_block
+	display_name    = each.value.name
+	dns_label       = try(each.value.dns_name, each.value.name)
 	security_list_ids = contains(keys(each.value), "security_lists") ? [
 		for name in each.value.security_lists : (
 			name == "default" ?
