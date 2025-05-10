@@ -4,3 +4,4 @@ disable=
 	missing-function-docstring,
 	missing-class-docstring,
 	superfluous-parens,
+	unused-argument

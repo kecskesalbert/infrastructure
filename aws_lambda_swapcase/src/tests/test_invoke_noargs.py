@@ -1,5 +1,5 @@
 import sys
-sys.path.append( '..')
+sys.path.append('.')
 from aws_lambda_swapcase.src.lambda_swapcase import lambda_handler
 
 """
